@@ -2,7 +2,7 @@
 
 ## Research Question
 
-Compare Xenium TMA design options for 80 synovial-biopsy patients split across 2 TMAs, targeting 40 patients per TMA, with emphasis on total core surface area divided by total Xenium chamber area.
+Compare Xenium TMA design options for the MDR_RA consortium: 80 patients split across 2 TMAs, targeting 40 patients per TMA, with emphasis on total core surface area divided by total Xenium chamber area.
 
 ## Task Type
 
@@ -30,9 +30,9 @@ Descriptive design optimization and method-validation support. This is not a cau
 ## Resources Read
 
 - `README.md`
-- `tma_xenium_core_optimizer.py`
-- `tma_layout_generator.py`
-- `TMA_design_geomx.R`
+- `scripts/tma_xenium_core_optimizer.py`
+- `scripts/tma_layout_generator.py`
+- `scripts/TMA_design_geomx.R`
 - Pilla D, Bosisio FM, Marotta R, et al. Tissue microarray design and construction for scientific, industrial and diagnostic use. J Pathol Inform. 2012;3:42. PMCID: PMC3551499. DOI: 10.4103/2153-3539.104904.
 - Local CC-BY-4.0 license source: `C:\Users\srenne\GitHubRepo\Dispensa_PaDi\LICENSE`.
 

@@ -192,7 +192,13 @@ def read_r_design(path: str, fallback_core_diameter_mm: float = 0.6) -> RDesignI
 
 
 def resolve_r_design(path: Optional[str], fallback_core_diameter_mm: float = 0.6) -> RDesignInfo:
-    search_paths = [path] if path else ["TMA_design.R", "TMA_design_geomx.R"]
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    search_paths = [path] if path else [
+        "TMA_design.R",
+        "TMA_design_geomx.R",
+        os.path.join(script_dir, "TMA_design.R"),
+        os.path.join(script_dir, "TMA_design_geomx.R"),
+    ]
     for candidate in search_paths:
         if candidate and os.path.exists(candidate):
             return read_r_design(candidate, fallback_core_diameter_mm)
@@ -935,7 +941,7 @@ def write_summary(path: str, r_design: RDesignInfo, best: Sequence[StrategyResul
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Xenium-specific multi-TMA core optimizer")
     p.add_argument("--r-design", default=None, help="Optional historical R TMA design. If omitted, local TMA_design.R or TMA_design_geomx.R is used when present.")
-    p.add_argument("--output-prefix", default="tma_xenium_core_optimization")
+    p.add_argument("--output-prefix", default="mdr_ra_tma_xenium_core_optimization")
     p.add_argument("--results-dir", default="results")
     p.add_argument("--tables-dir", default=None)
     p.add_argument("--figures-dir", default=None)

@@ -3,9 +3,9 @@
 ## Read Locally
 
 - `README.md`
-- `tma_xenium_core_optimizer.py`
-- `tma_layout_generator.py`
-- `TMA_design_geomx.R`
+- `scripts/tma_xenium_core_optimizer.py`
+- `scripts/tma_layout_generator.py`
+- `scripts/TMA_design_geomx.R`
 - `docs/codex_intake.md`
 
 ## Literature And Standards

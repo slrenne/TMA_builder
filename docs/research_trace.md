@@ -1,8 +1,8 @@
-# Research Trace: Xenium TMA Chamber Design
+# Research Trace: MDR_RA Xenium TMA Chamber Design
 
 ## Design Question
 
-For a Xenium experiment using synovial biopsy tissue, compare tissue microarray layouts that represent 80 patients by splitting them across 2 TMAs, with 40 patients assigned to each TMA.
+For a Xenium experiment in the MDR_RA consortium, compare tissue microarray layouts that represent 80 patients by splitting them across 2 TMAs, with 40 patients assigned to each TMA.
 
 The immediate design objective is descriptive and validation-oriented: maximize usable patient tissue surface within the Xenium chamber while preserving a robust orientation signature for de-arraying and avoiding avoidable sample-identification risk.
 
@@ -118,6 +118,6 @@ The optimizer is geometric. It does not model:
 - paraffin compression, section wrinkles, shear, or tearing;
 - scanner/acquisition failures;
 - segmentation or de-arraying failures;
-- biological heterogeneity within synovial biopsies.
+- biological heterogeneity within the sampled MDR_RA tissue cohort.
 
 These are downstream technical and biological risks. The final design should be reviewed by the pathologist and the TMA operator before construction.

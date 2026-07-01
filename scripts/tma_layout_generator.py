@@ -2,7 +2,7 @@
 """
 Generate a tissue microarray (TMA) layout map as CSV and PNG.
 
-Default design target for this project:
+Default design target for the MDR_RA TMA project:
 - 40 patients per TMA
 - 0.6 mm diameter cores
 - 1.0 mm minimum edge-to-edge spacing
@@ -13,12 +13,12 @@ The default usable Xenium chamber is 22.45 x 10.45 mm. Change this with
 --usable-width-mm and --usable-height-mm after confirming final operator
 and instrument constraints.
 
-Example:
-    python tma_layout_generator.py --output-prefix synovial_tma
+Example from the repository root:
+    python scripts/tma_layout_generator.py --output-prefix mdr_ra_tma_01_map
 
 Using actual patient IDs:
-    python tma_layout_generator.py --patients-csv patients.csv \
-        --patient-id-column patient_id --output-prefix synovial_tma
+    python scripts/tma_layout_generator.py --patients-csv patients.csv \
+        --patient-id-column patient_id --output-prefix mdr_ra_tma_01_map
 """
 
 from __future__ import annotations
@@ -618,7 +618,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create a randomized, asymmetrical TMA map as PNG and CSV."
     )
-    parser.add_argument("--tma-id", default="SYNOVIAL_TMA_001")
+    parser.add_argument("--tma-id", default="MDR_RA_TMA_001")
     parser.add_argument("--n-patients", type=int, default=40)
     parser.add_argument("--patient-prefix", default="P")
     parser.add_argument("--patient-start-index", type=int, default=1)
@@ -656,7 +656,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strata-x", type=int, default=4)
     parser.add_argument("--strata-y", type=int, default=4)
     parser.add_argument("--seed", type=int, default=20260630)
-    parser.add_argument("--output-prefix", default="synovial_tma_01_map")
+    parser.add_argument("--output-prefix", default="mdr_ra_tma_01_map")
     parser.add_argument("--tables-dir", default=os.path.join("results", "tables"))
     parser.add_argument("--figures-dir", default=os.path.join("results", "figures"))
     parser.add_argument(

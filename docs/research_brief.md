@@ -2,7 +2,7 @@
 
 ## Project
 
-Xenium-oriented synovial tissue microarray design for an 80-patient cohort.
+Xenium-oriented MDR_RA consortium tissue microarray design for an 80-patient cohort.
 
 ## Objective
 
