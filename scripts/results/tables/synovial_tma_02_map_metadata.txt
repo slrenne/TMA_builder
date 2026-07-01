@@ -1,0 +1,20 @@
+TMA ID: SYNOVIAL_TMA_002
+Output prefix: synovial_tma_02_map
+Random seed: 20260630
+Layout: hexagonal
+Usable chamber: 22.45 x 10.45 mm
+Core diameter: 0.6 mm
+Minimum edge spacing requested: 1.0 mm
+Minimum center distance observed: 1.6000 mm
+Minimum edge distance observed: 1.0000 mm
+Total physical positions: 112
+Patients: 40
+Patient cores assigned: 108
+Fiducials: 4
+Unused positions: 0
+Replicates per patient: min=2, median=3, max=3
+
+Notes:
+- Patient assignment is randomized and interleaved across spatial strata.
+- Fiducial positions create a non-symmetric orientation signature.
+- Verify the actual usable chamber dimensions and available punch diameter before construction.

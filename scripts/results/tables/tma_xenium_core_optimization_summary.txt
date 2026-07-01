@@ -1,0 +1,41 @@
+Xenium multi-TMA core-size optimizer summary
+==========================================
+
+This run is Xenium-specific. The uploaded R file is used only as a historical GeoMx reference for the old empty-row/empty-column orientation strategy.
+
+Xenium sample placement area used per TMA: 22.45 x 10.45 mm = 234.60 mm2
+Number of TMAs / Xenium sample areas: 2
+Patients: 80
+Target patients per TMA: 40.00
+Minimum edge-to-edge spacing: 1 mm
+Allowed core diameters: 0.6,1.0,1.5,2.0 mm
+Minimum core diameter explored: 0.6 mm
+Minimum cores/patient constraint across all TMAs: 1
+
+Orientation principles encoded from Pilla et al. 2012 (PMCID: PMC3551499): use a visible intrinsically asymmetric pattern, keep the asymmetry source in a fixed corner, avoid full empty rows/lines, and prefer compact markers that remain interpretable if a few spots or peripheral rows are lost.
+
+Historical R design, not used as Xenium geometry:
+- Matrix: 14 x 31 = 434 positions
+- Empty rows: [11]; empty columns: [16, 27]
+- Empty-position penalty in that design: 57/434 = 13.1%
+
+Best feasible allowed-size choices:
+- hexagonal, No orientation holes, d=0.6 mm: 112 patient slots/TMA, 224 total patient slots, mean 2.80/patient, total patient area 63.33 mm2, orientation/control cost 0.0%
+- hexagonal, 4 asymmetric control cores, d=0.6 mm: 108 patient slots/TMA, 216 total patient slots, mean 2.70/patient, total patient area 61.07 mm2, orientation/control cost 3.6%
+- hexagonal, 4 empty diagonal holes, d=0.6 mm: 108 patient slots/TMA, 216 total patient slots, mean 2.70/patient, total patient area 61.07 mm2, orientation/control cost 3.6%
+- hexagonal, 4 empty holes in one row, d=0.6 mm: 108 patient slots/TMA, 216 total patient slots, mean 2.70/patient, total patient area 61.07 mm2, orientation/control cost 3.6%
+- hexagonal, 6 empty staircase holes, d=0.6 mm: 106 patient slots/TMA, 212 total patient slots, mean 2.65/patient, total patient area 59.94 mm2, orientation/control cost 5.4%
+- hexagonal, Old R/GeoMx empty row + columns, d=0.6 mm: 84 patient slots/TMA, 168 total patient slots, mean 2.10/patient, total patient area 47.50 mm2, orientation/control cost 25.0%
+- rectangular, No orientation holes, d=0.6 mm: 98 patient slots/TMA, 196 total patient slots, mean 2.45/patient, total patient area 55.42 mm2, orientation/control cost 0.0%
+- rectangular, 4 asymmetric control cores, d=0.6 mm: 94 patient slots/TMA, 188 total patient slots, mean 2.35/patient, total patient area 53.16 mm2, orientation/control cost 4.1%
+- rectangular, 4 empty diagonal holes, d=0.6 mm: 94 patient slots/TMA, 188 total patient slots, mean 2.35/patient, total patient area 53.16 mm2, orientation/control cost 4.1%
+- rectangular, 4 empty holes in one row, d=0.6 mm: 94 patient slots/TMA, 188 total patient slots, mean 2.35/patient, total patient area 53.16 mm2, orientation/control cost 4.1%
+- rectangular, 6 empty staircase holes, d=0.6 mm: 92 patient slots/TMA, 184 total patient slots, mean 2.30/patient, total patient area 52.02 mm2, orientation/control cost 6.1%
+- rectangular, Old R/GeoMx empty row + columns, d=0.6 mm: 72 patient slots/TMA, 144 total patient slots, mean 1.80/patient, total patient area 40.72 mm2, orientation/control cost 26.5%
+
+Recommended map:
+- 2 TMA(s), hexagonal, 4 empty diagonal holes, d=0.6 mm
+- 108 patient cores/TMA, 216 total patient cores, mean 2.70/patient, minimum balanced cores/patient 2
+- Total core surface / total chamber area: 0.1302; patient core surface / total chamber area: 0.1302
+- For one Xenium sample area and 80 patients, 0.6 mm is usually required to keep all patients represented with 1 mm spacing. More TMAs increase patient-level replication while keeping the same per-slide constraints.
+- Prefer compact asymmetric empty-hole markers over the historical full row/column empty pattern for Xenium, because the Xenium sample area is smaller and orientation holes are expensive.

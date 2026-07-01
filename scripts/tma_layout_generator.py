@@ -3,15 +3,15 @@
 Generate a tissue microarray (TMA) layout map as CSV and PNG.
 
 Default design target for this project:
-- 80 patients
-- 0.5 mm diameter cores
+- 40 patients per TMA
+- 0.6 mm diameter cores
 - 1.0 mm minimum edge-to-edge spacing
 - asymmetrical fiducial/orientation positions
 - randomized and spatially stratified patient assignment
 
-The default usable chamber is 25 x 20 mm = 500 mm^2. Change this with
---usable-width-mm and --usable-height-mm after confirming the actual instrument
-or slide imageable dimensions.
+The default usable Xenium chamber is 22.45 x 10.45 mm. Change this with
+--usable-width-mm and --usable-height-mm after confirming final operator
+and instrument constraints.
 
 Example:
     python tma_layout_generator.py --output-prefix synovial_tma
@@ -187,9 +187,13 @@ def load_patient_records(
     patient_id_column: str,
     n_patients: int,
     patient_prefix: str,
+    patient_start_index: int,
 ) -> List[PatientRecord]:
     if patients_csv is None:
-        return [{"patient_id": f"{patient_prefix}{i:03d}"} for i in range(1, n_patients + 1)]
+        return [
+            {"patient_id": f"{patient_prefix}{i:03d}"}
+            for i in range(patient_start_index, patient_start_index + n_patients)
+        ]
 
     records: List[PatientRecord] = []
     with open(patients_csv, "r", newline="") as f:
@@ -604,17 +608,24 @@ def write_metadata_txt(
         f.write("- Verify the actual usable chamber dimensions and available punch diameter before construction.\n")
 
 
+def output_path(output_prefix: str, suffix: str, default_dir: str) -> str:
+    prefix_dir = os.path.dirname(output_prefix)
+    filename = f"{os.path.basename(output_prefix)}{suffix}"
+    return os.path.join(prefix_dir or default_dir, filename)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create a randomized, asymmetrical TMA map as PNG and CSV."
     )
     parser.add_argument("--tma-id", default="SYNOVIAL_TMA_001")
-    parser.add_argument("--n-patients", type=int, default=80)
+    parser.add_argument("--n-patients", type=int, default=40)
     parser.add_argument("--patient-prefix", default="P")
+    parser.add_argument("--patient-start-index", type=int, default=1)
     parser.add_argument("--patients-csv", default=None, help="Optional CSV with patient/sample metadata.")
     parser.add_argument("--patient-id-column", default="patient_id")
-    parser.add_argument("--usable-width-mm", type=float, default=25.0)
-    parser.add_argument("--usable-height-mm", type=float, default=20.0)
+    parser.add_argument("--usable-width-mm", type=float, default=22.45)
+    parser.add_argument("--usable-height-mm", type=float, default=10.45)
     parser.add_argument("--margin-mm", type=float, default=0.0)
     parser.add_argument("--core-diameter-mm", type=float, default=0.6)
     parser.add_argument("--min-edge-space-mm", type=float, default=1.0)
@@ -633,7 +644,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fiducial-mode",
         choices=["cores", "holes"],
-        default="cores",
+        default="holes",
         help="Use fiducial control cores, or leave fiducial positions empty as holes.",
     )
     parser.add_argument(
@@ -645,7 +656,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strata-x", type=int, default=4)
     parser.add_argument("--strata-y", type=int, default=4)
     parser.add_argument("--seed", type=int, default=20260630)
-    parser.add_argument("--output-prefix", default="synovial_tma_map")
+    parser.add_argument("--output-prefix", default="synovial_tma_01_map")
+    parser.add_argument("--tables-dir", default=os.path.join("results", "tables"))
+    parser.add_argument("--figures-dir", default=os.path.join("results", "figures"))
     parser.add_argument(
         "--label-mode",
         choices=["none", "position", "patient", "patient_rep", "role"],
@@ -683,7 +696,11 @@ def main() -> None:
     patient_candidate_indices = [idx for idx in range(len(positions)) if idx not in fiducial_slot_indices]
 
     patient_records = load_patient_records(
-        args.patients_csv, args.patient_id_column, args.n_patients, args.patient_prefix
+        args.patients_csv,
+        args.patient_id_column,
+        args.n_patients,
+        args.patient_prefix,
+        args.patient_start_index,
     )
     patient_core_entries, replicate_counts = balanced_patient_core_list(
         patient_records,
@@ -703,10 +720,11 @@ def main() -> None:
         args=args,
     )
 
-    output_csv = f"{args.output_prefix}.csv"
-    output_png = f"{args.output_prefix}.png"
-    output_txt = f"{args.output_prefix}_metadata.txt"
+    output_csv = output_path(args.output_prefix, ".csv", args.tables_dir)
+    output_png = output_path(args.output_prefix, ".png", args.figures_dir)
+    output_txt = output_path(args.output_prefix, "_metadata.txt", args.tables_dir)
     os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(output_png) or ".", exist_ok=True)
     write_csv(rows, output_csv)
     plot_layout(
         rows=rows,

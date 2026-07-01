@@ -1,0 +1,18 @@
+file,column,description
+results/tables/*_area_efficiency.csv,number_of_tmas,Number of TMAs or Xenium sample areas in the design scenario.
+results/tables/*_area_efficiency.csv,total_patients,Total patients represented across all TMAs.
+results/tables/*_area_efficiency.csv,patients_per_tma,Target patients assigned to each TMA.
+results/tables/*_area_efficiency.csv,layout,Core disposition as rectangular or hexagonal.
+results/tables/*_area_efficiency.csv,core_diameter_mm,Core diameter in millimeters.
+results/tables/*_area_efficiency.csv,orientation_empty_holes_per_tma,Empty orientation holes reserved per TMA.
+results/tables/*_area_efficiency.csv,orientation_fiducial_cores_per_tma,Fiducial or control tissue cores reserved per TMA.
+results/tables/*_area_efficiency.csv,patient_positions_per_tma,Patient tissue core slots available in each TMA.
+results/tables/*_area_efficiency.csv,mean_cores_per_patient,Mean replicated patient cores per patient.
+results/tables/*_area_efficiency.csv,total_core_surface_to_total_chamber_area,Total non-empty core surface divided by total chamber area.
+results/tables/*_recommended_map.csv,tma_index,TMA index for the recommended map.
+results/tables/*_recommended_map.csv,row,Grid row.
+results/tables/*_recommended_map.csv,col,Grid column.
+results/tables/*_recommended_map.csv,x_mm,Core center x coordinate in millimeters.
+results/tables/*_recommended_map.csv,y_mm,Core center y coordinate in millimeters.
+results/tables/*_recommended_map.csv,role,Position role: patient empty or control.
+results/tables/*_recommended_map.csv,patient_id,Synthetic or user-provided patient identifier.

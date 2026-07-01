@@ -11,18 +11,19 @@ Default TMA Grand Master-compatible core diameters are: 0.6, 1.0, 1.5, 2.0 mm.
 The minimum core diameter is 0.6 mm.
 
 Main outputs:
-  <prefix>_comparison.csv
-  <prefix>_best_allowed.csv
-  <prefix>_surface_vs_diameter.png
-  <prefix>_cores_per_patient_vs_diameter.png
-  <prefix>_allowed_sizes.png
-  <prefix>_orientation_penalty.png
-  <prefix>_tma_count_scan.csv
-  <prefix>_tma_count_scan.png
-  <prefix>_recommended_map.csv
-  <prefix>_recommended_map.png
-  <prefix>_summary.txt
-  <prefix>_outputs.zip
+  results/tables/<prefix>_comparison.csv
+  results/tables/<prefix>_area_efficiency.csv
+  results/tables/<prefix>_best_allowed.csv
+  results/figures/<prefix>_surface_vs_diameter.png
+  results/figures/<prefix>_cores_per_patient_vs_diameter.png
+  results/figures/<prefix>_allowed_sizes.png
+  results/figures/<prefix>_orientation_penalty.png
+  results/tables/<prefix>_tma_count_scan.csv
+  results/figures/<prefix>_tma_count_scan.png
+  results/tables/<prefix>_recommended_map.csv
+  results/figures/<prefix>_recommended_map.png
+  results/tables/<prefix>_summary.txt
+  results/<prefix>_outputs.zip
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ import random
 import re
 import zipfile
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, Patch, Rectangle
@@ -63,6 +64,8 @@ class StrategyResult:
     strategy: str
     layout: str
     number_of_tmas: int
+    n_patients: int
+    patients_per_tma_target: float
     core_diameter_mm: float
     usable_width_mm: float
     usable_height_mm: float
@@ -80,6 +83,9 @@ class StrategyResult:
     patients_with_extra_core: int
     patient_tissue_area_mm2: float
     all_tissue_area_mm2: float
+    total_chamber_area_mm2: float
+    patient_tissue_fraction_of_chamber_area_all_tmas: float
+    total_core_surface_fraction_of_chamber_area_all_tmas: float
     tissue_fraction_of_sample_area_all_tmas: float
     orientation_penalty_percent: float
     asymmetry_score: int
@@ -105,12 +111,36 @@ DEFAULT_STRATEGIES = [
 ]
 
 
+def default_r_design_info(fallback_core_diameter_mm: float = 0.6) -> RDesignInfo:
+    return RDesignInfo(
+        n_rows=14,
+        n_cols=31,
+        reference_core_diameter_mm=fallback_core_diameter_mm,
+        empty_rows=(11,),
+        empty_cols=(16, 27),
+    )
+
+
 def parse_float_list(text: str) -> List[float]:
     return [float(x) for x in re.split(r"[,; ]+", text.strip()) if x]
 
 
 def parse_int_list(text: str) -> List[int]:
     return [int(x) for x in re.split(r"[,; ]+", text.strip()) if x]
+
+
+def patients_per_tma_target(n_patients: int, number_of_tmas: int, override: Optional[float] = None) -> float:
+    if override is not None:
+        return float(override)
+    if number_of_tmas <= 0:
+        return float("nan")
+    return n_patients / number_of_tmas
+
+
+def output_path(output_prefix: str, suffix: str, default_dir: str) -> str:
+    prefix_dir = os.path.dirname(output_prefix)
+    filename = f"{os.path.basename(output_prefix)}{suffix}"
+    return os.path.join(prefix_dir or default_dir, filename)
 
 
 def parse_strategy_list(text: str) -> List[str]:
@@ -159,6 +189,18 @@ def read_r_design(path: str, fallback_core_diameter_mm: float = 0.6) -> RDesignI
         empty_rows=tuple(sorted(set(empty_rows))),
         empty_cols=tuple(sorted(set(empty_cols))),
     )
+
+
+def resolve_r_design(path: Optional[str], fallback_core_diameter_mm: float = 0.6) -> RDesignInfo:
+    search_paths = [path] if path else ["TMA_design.R", "TMA_design_geomx.R"]
+    for candidate in search_paths:
+        if candidate and os.path.exists(candidate):
+            return read_r_design(candidate, fallback_core_diameter_mm)
+    if path:
+        print(f"Warning: R design file not found: {path}. Using built-in 14 x 31 GeoMx orientation reference.")
+    else:
+        print("Warning: no R design file found. Using built-in 14 x 31 GeoMx orientation reference.")
+    return default_r_design_info(fallback_core_diameter_mm)
 
 
 def generate_positions(
@@ -236,6 +278,43 @@ def target_points(positions: Sequence[Position], strategy: str, pitch: float) ->
     return []
 
 
+def compact_corner_targets(positions: Sequence[Position], marker_count: int, pitch: float) -> List[Tuple[float, float]]:
+    if marker_count <= 0 or not positions:
+        return []
+    xs = [p.x_mm for p in positions]
+    ys = [p.y_mm for p in positions]
+    max_x = max(xs)
+    min_y = min(ys)
+    points: List[Tuple[float, float]] = []
+    for idx in range(marker_count):
+        step = idx // 2
+        if idx % 2 == 0:
+            points.append((max_x - step * pitch, min_y + step * pitch))
+        else:
+            points.append((max_x - (step + 1) * pitch, min_y + step * pitch))
+    return points
+
+
+def assign_compact_orientation_roles(
+    positions: Sequence[Position],
+    empty_count: int,
+    fiducial_count: int,
+    core_diameter_mm: float,
+    min_edge_space_mm: float,
+) -> List[str]:
+    roles = ["patient" for _ in positions]
+    marker_count = max(0, empty_count) + max(0, fiducial_count)
+    if not positions or marker_count <= 0:
+        return roles
+    pitch = core_diameter_mm + min_edge_space_mm
+    marker_indices = nearest_indices(positions, compact_corner_targets(positions, marker_count, pitch))
+    for idx in marker_indices[:empty_count]:
+        roles[idx] = "empty"
+    for idx in marker_indices[empty_count:empty_count + fiducial_count]:
+        roles[idx] = "control"
+    return roles
+
+
 def scaled_r_empty_indices(positions: Sequence[Position], r_design: RDesignInfo) -> Tuple[set, set]:
     n_rows = max(p.row for p in positions) if positions else 0
     n_cols = max(p.col for p in positions) if positions else 0
@@ -273,15 +352,49 @@ def asymmetry_score(positions: Sequence[Position], roles: Sequence[str]) -> int:
         return 0
     n_rows = max(p.row for p in positions)
     n_cols = max(p.col for p in positions)
-    m = [[0 for _ in range(n_cols)] for _ in range(n_rows)]
+    role_values = {"empty": 0, "patient": 1, "control": 2}
+    m = [[-1 for _ in range(n_cols)] for _ in range(n_rows)]
     for pos, role in zip(positions, roles):
-        m[pos.row - 1][pos.col - 1] = 0 if role == "empty" else 1
+        m[pos.row - 1][pos.col - 1] = role_values.get(role, 1)
+
+    def rotate180(mat: List[List[int]]) -> List[List[int]]:
+        return [list(reversed(row)) for row in reversed(mat)]
+
+    def rotate90(mat: List[List[int]]) -> List[List[int]]:
+        return [list(row) for row in zip(*mat[::-1])]
+
+    def rotate270(mat: List[List[int]]) -> List[List[int]]:
+        return [list(row) for row in zip(*mat)][::-1]
+
     transforms = [
         [list(reversed(row)) for row in m],
         list(reversed(m)),
-        [list(reversed(row)) for row in reversed(m)],
+        rotate180(m),
     ]
+    if n_rows == n_cols:
+        transforms.extend([
+            rotate90(m),
+            rotate270(m),
+            [list(row) for row in zip(*m)],
+            [list(row) for row in zip(*rotate180(m))],
+        ])
     return min(sum(1 for r in range(n_rows) for c in range(n_cols) if m[r][c] != t[r][c]) for t in transforms)
+
+
+def has_full_empty_line(positions: Sequence[Position], roles: Sequence[str]) -> bool:
+    row_counts: Dict[int, int] = {}
+    col_counts: Dict[int, int] = {}
+    row_empty: Dict[int, int] = {}
+    col_empty: Dict[int, int] = {}
+    for pos, role in zip(positions, roles):
+        row_counts[pos.row] = row_counts.get(pos.row, 0) + 1
+        col_counts[pos.col] = col_counts.get(pos.col, 0) + 1
+        if role == "empty":
+            row_empty[pos.row] = row_empty.get(pos.row, 0) + 1
+            col_empty[pos.col] = col_empty.get(pos.col, 0) + 1
+    return any(row_empty.get(row, 0) == count for row, count in row_counts.items()) or any(
+        col_empty.get(col, 0) == count for col, count in col_counts.items()
+    )
 
 
 def evaluate(
@@ -299,6 +412,7 @@ def evaluate(
 ) -> List[StrategyResult]:
     results: List[StrategyResult] = []
     total_sample_area = usable_width_mm * usable_height_mm * number_of_tmas
+    patients_per_tma = patients_per_tma_target(n_patients, number_of_tmas)
     for layout in layouts:
         for diameter in diameters:
             positions = generate_positions(usable_width_mm, usable_height_mm, diameter, min_edge_space_mm, margin_mm, layout)
@@ -313,11 +427,17 @@ def evaluate(
                 control_positions_all = control_positions_per * number_of_tmas
                 total_positions_all = positions_per * number_of_tmas
                 core_area = math.pi * (diameter / 2.0) ** 2
+                patient_tissue_area = patient_positions_all * core_area
+                all_core_surface_area = (patient_positions_all + control_positions_all) * core_area
+                patient_fraction = patient_tissue_area / total_sample_area if total_sample_area else 0.0
+                all_core_fraction = all_core_surface_area / total_sample_area if total_sample_area else 0.0
                 results.append(
                     StrategyResult(
                         strategy=strategy,
                         layout=layout,
                         number_of_tmas=number_of_tmas,
+                        n_patients=n_patients,
+                        patients_per_tma_target=patients_per_tma,
                         core_diameter_mm=diameter,
                         usable_width_mm=usable_width_mm,
                         usable_height_mm=usable_height_mm,
@@ -333,9 +453,12 @@ def evaluate(
                         mean_cores_per_patient=patient_positions_all / n_patients,
                         min_balanced_cores_per_patient=patient_positions_all // n_patients,
                         patients_with_extra_core=patient_positions_all % n_patients,
-                        patient_tissue_area_mm2=patient_positions_all * core_area,
-                        all_tissue_area_mm2=(patient_positions_all + control_positions_all) * core_area,
-                        tissue_fraction_of_sample_area_all_tmas=(patient_positions_all * core_area) / total_sample_area if total_sample_area else 0.0,
+                        patient_tissue_area_mm2=patient_tissue_area,
+                        all_tissue_area_mm2=all_core_surface_area,
+                        total_chamber_area_mm2=total_sample_area,
+                        patient_tissue_fraction_of_chamber_area_all_tmas=patient_fraction,
+                        total_core_surface_fraction_of_chamber_area_all_tmas=all_core_fraction,
+                        tissue_fraction_of_sample_area_all_tmas=patient_fraction,
                         orientation_penalty_percent=(empty_positions_per + control_positions_per) / positions_per * 100.0 if positions_per else 0.0,
                         asymmetry_score=asymmetry_score(positions, roles),
                         feasible=patient_positions_all >= n_patients * min_cores_per_patient,
@@ -356,6 +479,8 @@ def result_to_dict(r: StrategyResult) -> Dict[str, object]:
         "strategy_label": STRATEGY_LABELS[r.strategy],
         "layout": r.layout,
         "number_of_tmas": r.number_of_tmas,
+        "n_patients": r.n_patients,
+        "patients_per_tma_target": f"{r.patients_per_tma_target:.4f}",
         "core_diameter_mm": f"{r.core_diameter_mm:.4f}",
         "usable_width_mm": f"{r.usable_width_mm:.4f}",
         "usable_height_mm": f"{r.usable_height_mm:.4f}",
@@ -373,6 +498,10 @@ def result_to_dict(r: StrategyResult) -> Dict[str, object]:
         "patients_with_extra_core": r.patients_with_extra_core,
         "patient_tissue_area_mm2": f"{r.patient_tissue_area_mm2:.4f}",
         "all_tissue_area_mm2": f"{r.all_tissue_area_mm2:.4f}",
+        "total_chamber_area_mm2": f"{r.total_chamber_area_mm2:.4f}",
+        "patient_tissue_fraction_of_chamber_area_all_tmas": f"{r.patient_tissue_fraction_of_chamber_area_all_tmas:.6f}",
+        "total_core_surface_fraction_of_chamber_area_all_tmas": f"{r.total_core_surface_fraction_of_chamber_area_all_tmas:.6f}",
+        "total_core_surface_to_total_chamber_area": f"{r.total_core_surface_fraction_of_chamber_area_all_tmas:.6f}",
         "tissue_fraction_of_sample_area_all_tmas": f"{r.tissue_fraction_of_sample_area_all_tmas:.6f}",
         "orientation_penalty_percent": f"{r.orientation_penalty_percent:.4f}",
         "asymmetry_score": r.asymmetry_score,
@@ -387,6 +516,163 @@ def write_csv(results: Sequence[StrategyResult], path: str) -> None:
         writer.writeheader()
         for r in results:
             writer.writerow(result_to_dict(r))
+
+
+def write_area_efficiency_comparison(args: argparse.Namespace, layouts: Sequence[str], path: str) -> None:
+    patients_per_tma = patients_per_tma_target(args.n_patients, args.number_of_tmas, args.patients_per_tma)
+    total_chamber_area = args.usable_width_mm * args.usable_height_mm * args.number_of_tmas
+    diameters = sorted(set(parse_float_list(args.allowed_core_diameters_mm)))
+    empty_counts = sorted(set(parse_int_list(args.orientation_empty_counts)))
+    fiducial_counts = sorted(set(parse_int_list(args.orientation_fiducial_counts)))
+    rows: List[Dict[str, object]] = []
+    for layout in layouts:
+        core_disposition = "hexagonal_staggered" if layout == "hexagonal" else "rectangular_grid"
+        for diameter in diameters:
+            positions = generate_positions(
+                args.usable_width_mm,
+                args.usable_height_mm,
+                diameter,
+                args.min_edge_space_mm,
+                args.margin_mm,
+                layout,
+            )
+            core_area = math.pi * (diameter / 2.0) ** 2
+            for empty_count in empty_counts:
+                for fiducial_count in fiducial_counts:
+                    roles = assign_compact_orientation_roles(
+                        positions,
+                        empty_count,
+                        fiducial_count,
+                        diameter,
+                        args.min_edge_space_mm,
+                    )
+                    patient_positions_per = roles.count("patient")
+                    empty_positions_per = roles.count("empty")
+                    fiducial_positions_per = roles.count("control")
+                    marker_count = empty_positions_per + fiducial_positions_per
+                    patient_positions_all = patient_positions_per * args.number_of_tmas
+                    empty_positions_all = empty_positions_per * args.number_of_tmas
+                    fiducial_positions_all = fiducial_positions_per * args.number_of_tmas
+                    patient_surface = patient_positions_all * core_area
+                    fiducial_surface = fiducial_positions_all * core_area
+                    total_core_surface = patient_surface + fiducial_surface
+                    full_empty_line = has_full_empty_line(positions, roles)
+                    score = asymmetry_score(positions, roles)
+                    finite_patients_per_tma = math.isfinite(patients_per_tma) and patients_per_tma > 0
+                    required_patient_positions = patients_per_tma * args.min_cores_per_patient if finite_patients_per_tma else float("inf")
+                    feasible = patient_positions_per + 1e-9 >= required_patient_positions
+                    passes_orientation = (
+                        marker_count >= args.min_orientation_markers
+                        and score >= args.min_orientation_asymmetry_score
+                        and not full_empty_line
+                    )
+                    notes: List[str] = []
+                    if marker_count < empty_count + fiducial_count:
+                        notes.append("requested marker count exceeds available positions")
+                    if marker_count == 0:
+                        notes.append("no orientation markers")
+                    if marker_count < args.min_orientation_markers:
+                        notes.append(f"below minimum marker count {args.min_orientation_markers}")
+                    if score < args.min_orientation_asymmetry_score:
+                        notes.append("asymmetry score below threshold")
+                    if full_empty_line:
+                        notes.append("contains full empty row/column")
+                    if not notes:
+                        notes.append("compact asymmetric fixed-corner marker pattern")
+                    mean_cores_per_patient = patient_positions_per / patients_per_tma if finite_patients_per_tma else float("nan")
+                    min_balanced = math.floor(mean_cores_per_patient) if finite_patients_per_tma else 0
+                    patients_per_tma_is_integer = finite_patients_per_tma and float(patients_per_tma).is_integer()
+                    patients_with_extra = patient_positions_per % int(patients_per_tma) if patients_per_tma_is_integer else ""
+                    rows.append({
+                        "number_of_tmas": args.number_of_tmas,
+                        "total_patients": args.n_patients,
+                        "patients_per_tma": f"{patients_per_tma:.4f}",
+                        "core_disposition": core_disposition,
+                        "layout": layout,
+                        "core_diameter_mm": f"{diameter:.4f}",
+                        "orientation_empty_holes_per_tma": empty_positions_per,
+                        "orientation_fiducial_cores_per_tma": fiducial_positions_per,
+                        "orientation_markers_per_tma": marker_count,
+                        "positions_per_tma": len(positions),
+                        "patient_positions_per_tma": patient_positions_per,
+                        "patient_positions_all_tmas": patient_positions_all,
+                        "empty_positions_all_tmas": empty_positions_all,
+                        "fiducial_positions_all_tmas": fiducial_positions_all,
+                        "total_core_positions_all_tmas": patient_positions_all + fiducial_positions_all,
+                        "mean_cores_per_patient": f"{mean_cores_per_patient:.4f}" if finite_patients_per_tma else "",
+                        "min_balanced_cores_per_patient": min_balanced,
+                        "patients_with_extra_core_per_tma": patients_with_extra,
+                        "core_area_mm2": f"{core_area:.6f}",
+                        "patient_core_surface_area_mm2": f"{patient_surface:.4f}",
+                        "fiducial_core_surface_area_mm2": f"{fiducial_surface:.4f}",
+                        "total_core_surface_area_mm2": f"{total_core_surface:.4f}",
+                        "total_chamber_area_mm2": f"{total_chamber_area:.4f}",
+                        "patient_core_surface_to_total_chamber_area": f"{patient_surface / total_chamber_area:.6f}" if total_chamber_area else "",
+                        "total_core_surface_to_total_chamber_area": f"{total_core_surface / total_chamber_area:.6f}" if total_chamber_area else "",
+                        "reserved_orientation_position_percent": f"{100.0 * marker_count / len(positions):.4f}" if positions else "",
+                        "asymmetry_score": score,
+                        "passes_orientation_principles": int(passes_orientation),
+                        "feasible_for_patients_per_tma": int(feasible),
+                        "minimum_valid_orientation_marker_count": "",
+                        "is_minimum_valid_orientation_combo": 0,
+                        "notes": "; ".join(notes),
+                    })
+
+    minimum_by_layout_diameter: Dict[Tuple[str, str], int] = {}
+    for row in rows:
+        if row["passes_orientation_principles"] and row["feasible_for_patients_per_tma"]:
+            key = (str(row["layout"]), str(row["core_diameter_mm"]))
+            marker_count = int(row["orientation_markers_per_tma"])
+            minimum_by_layout_diameter[key] = min(marker_count, minimum_by_layout_diameter.get(key, marker_count))
+    for row in rows:
+        key = (str(row["layout"]), str(row["core_diameter_mm"]))
+        minimum = minimum_by_layout_diameter.get(key)
+        if minimum is not None:
+            row["minimum_valid_orientation_marker_count"] = minimum
+            row["is_minimum_valid_orientation_combo"] = int(
+                bool(row["passes_orientation_principles"])
+                and bool(row["feasible_for_patients_per_tma"])
+                and int(row["orientation_markers_per_tma"]) == minimum
+            )
+
+    fieldnames = [
+        "number_of_tmas",
+        "total_patients",
+        "patients_per_tma",
+        "core_disposition",
+        "layout",
+        "core_diameter_mm",
+        "orientation_empty_holes_per_tma",
+        "orientation_fiducial_cores_per_tma",
+        "orientation_markers_per_tma",
+        "positions_per_tma",
+        "patient_positions_per_tma",
+        "patient_positions_all_tmas",
+        "empty_positions_all_tmas",
+        "fiducial_positions_all_tmas",
+        "total_core_positions_all_tmas",
+        "mean_cores_per_patient",
+        "min_balanced_cores_per_patient",
+        "patients_with_extra_core_per_tma",
+        "core_area_mm2",
+        "patient_core_surface_area_mm2",
+        "fiducial_core_surface_area_mm2",
+        "total_core_surface_area_mm2",
+        "total_chamber_area_mm2",
+        "patient_core_surface_to_total_chamber_area",
+        "total_core_surface_to_total_chamber_area",
+        "reserved_orientation_position_percent",
+        "asymmetry_score",
+        "passes_orientation_principles",
+        "feasible_for_patients_per_tma",
+        "minimum_valid_orientation_marker_count",
+        "is_minimum_valid_orientation_combo",
+        "notes",
+    ]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def best_allowed(results: Sequence[StrategyResult], allowed: set) -> List[StrategyResult]:
@@ -474,6 +760,38 @@ def assign_patients_across_tmas(roles: Sequence[str], number_of_tmas: int, n_pat
     return {slot: pid for slot, pid in zip(slots, ids)}
 
 
+def assign_patients_by_tma_groups(
+    roles: Sequence[str],
+    number_of_tmas: int,
+    n_patients: int,
+    patients_per_tma: float,
+    seed: int,
+) -> Dict[Tuple[int, int], str]:
+    if not (math.isfinite(patients_per_tma) and patients_per_tma > 0 and float(patients_per_tma).is_integer()):
+        print("Warning: patients per TMA is not an integer. Using global patient distribution across all TMAs.")
+        return assign_patients_across_tmas(roles, number_of_tmas, n_patients, seed)
+    patients_per_tma_int = int(patients_per_tma)
+    if patients_per_tma_int * number_of_tmas != n_patients:
+        print("Warning: patients per TMA does not multiply to total patients. Using global patient distribution across all TMAs.")
+        return assign_patients_across_tmas(roles, number_of_tmas, n_patients, seed)
+    rng = random.Random(seed)
+    lookup: Dict[Tuple[int, int], str] = {}
+    patient_slots = [idx for idx, role in enumerate(roles) if role == "patient"]
+    for tma_index in range(1, number_of_tmas + 1):
+        slots = [(tma_index, idx) for idx in patient_slots]
+        rng.shuffle(slots)
+        start = (tma_index - 1) * patients_per_tma_int + 1
+        patient_ids = [f"P{i:03d}" for i in range(start, start + patients_per_tma_int)]
+        reps = len(slots) // patients_per_tma_int
+        extra = len(slots) % patients_per_tma_int
+        ids: List[str] = []
+        for idx, pid in enumerate(patient_ids):
+            ids.extend([pid] * (reps + (1 if idx < extra else 0)))
+        rng.shuffle(ids)
+        lookup.update({slot: pid for slot, pid in zip(slots, ids)})
+    return lookup
+
+
 def write_map_csv(positions: Sequence[Position], roles: Sequence[str], patient_lookup: Dict[Tuple[int, int], str], r: StrategyResult, path: str) -> None:
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["tma_index", "row", "col", "x_mm", "y_mm", "role", "patient_id", "core_diameter_mm", "min_edge_space_mm", "layout", "strategy", "number_of_tmas"])
@@ -536,10 +854,10 @@ def choose_recommended(best: Sequence[StrategyResult]) -> StrategyResult:
     oriented = [r for r in best if r.strategy != "none"]
     candidates = oriented if oriented else list(best)
     preferred_strategy_rank = {
-        "six_empty_staircase": 5,
-        "four_empty_diagonal": 4,
-        "four_empty_row": 3,
-        "four_control_asymmetric": 2,
+        "four_empty_diagonal": 5,
+        "four_control_asymmetric": 4,
+        "six_empty_staircase": 3,
+        "four_empty_row": 2,
         "r_empty_row_cols": 1,
         "none": 0,
     }
@@ -547,11 +865,11 @@ def choose_recommended(best: Sequence[StrategyResult]) -> StrategyResult:
         candidates,
         key=lambda r: (
             r.min_balanced_cores_per_patient,
-            preferred_strategy_rank[r.strategy],
             r.patient_tissue_area_mm2,
             r.patient_positions_all_tmas,
+            -(r.empty_positions_all_tmas + r.control_positions_all_tmas),
+            preferred_strategy_rank[r.strategy],
             r.asymmetry_score,
-            -r.empty_positions_all_tmas,
         ),
     )
 
@@ -585,6 +903,7 @@ def scan_tma_counts(args: argparse.Namespace, r_design: RDesignInfo, strategies:
 def write_summary(path: str, r_design: RDesignInfo, best: Sequence[StrategyResult], recommended: StrategyResult, args: argparse.Namespace) -> None:
     r_total = r_design.n_rows * r_design.n_cols
     r_empty = r_design.n_rows * len(r_design.empty_cols) + r_design.n_cols * len(r_design.empty_rows) - len(r_design.empty_rows) * len(r_design.empty_cols)
+    patients_per_tma = patients_per_tma_target(args.n_patients, args.number_of_tmas, args.patients_per_tma)
     with open(path, "w") as f:
         f.write("Xenium multi-TMA core-size optimizer summary\n")
         f.write("==========================================\n\n")
@@ -592,10 +911,12 @@ def write_summary(path: str, r_design: RDesignInfo, best: Sequence[StrategyResul
         f.write(f"Xenium sample placement area used per TMA: {args.usable_width_mm:g} x {args.usable_height_mm:g} mm = {args.usable_width_mm * args.usable_height_mm:.2f} mm2\n")
         f.write(f"Number of TMAs / Xenium sample areas: {args.number_of_tmas}\n")
         f.write(f"Patients: {args.n_patients}\n")
+        f.write(f"Target patients per TMA: {patients_per_tma:.2f}\n")
         f.write(f"Minimum edge-to-edge spacing: {args.min_edge_space_mm:g} mm\n")
         f.write(f"Allowed core diameters: {args.allowed_core_diameters_mm} mm\n")
         f.write(f"Minimum core diameter explored: {args.min_core_diameter_mm:g} mm\n")
         f.write(f"Minimum cores/patient constraint across all TMAs: {args.min_cores_per_patient}\n\n")
+        f.write("Orientation principles encoded from Pilla et al. 2012 (PMCID: PMC3551499): use a visible intrinsically asymmetric pattern, keep the asymmetry source in a fixed corner, avoid full empty rows/lines, and prefer compact markers that remain interpretable if a few spots or peripheral rows are lost.\n\n")
         f.write("Historical R design, not used as Xenium geometry:\n")
         f.write(f"- Matrix: {r_design.n_rows} x {r_design.n_cols} = {r_total} positions\n")
         f.write(f"- Empty rows: {list(r_design.empty_rows)}; empty columns: {list(r_design.empty_cols)}\n")
@@ -606,16 +927,21 @@ def write_summary(path: str, r_design: RDesignInfo, best: Sequence[StrategyResul
         f.write("\nRecommended map:\n")
         f.write(f"- {recommended.number_of_tmas} TMA(s), {recommended.layout}, {STRATEGY_LABELS[recommended.strategy]}, d={recommended.core_diameter_mm:g} mm\n")
         f.write(f"- {recommended.patient_positions_per_tma} patient cores/TMA, {recommended.patient_positions_all_tmas} total patient cores, mean {recommended.mean_cores_per_patient:.2f}/patient, minimum balanced cores/patient {recommended.min_balanced_cores_per_patient}\n")
+        f.write(f"- Total core surface / total chamber area: {recommended.total_core_surface_fraction_of_chamber_area_all_tmas:.4f}; patient core surface / total chamber area: {recommended.patient_tissue_fraction_of_chamber_area_all_tmas:.4f}\n")
         f.write("- For one Xenium sample area and 80 patients, 0.6 mm is usually required to keep all patients represented with 1 mm spacing. More TMAs increase patient-level replication while keeping the same per-slide constraints.\n")
         f.write("- Prefer compact asymmetric empty-hole markers over the historical full row/column empty pattern for Xenium, because the Xenium sample area is smaller and orientation holes are expensive.\n")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Xenium-specific multi-TMA core optimizer")
-    p.add_argument("--r-design", default="/mnt/data/TMA_design.R")
-    p.add_argument("--output-prefix", default="/mnt/data/tma_xenium_core_optimization")
+    p.add_argument("--r-design", default=None, help="Optional historical R TMA design. If omitted, local TMA_design.R or TMA_design_geomx.R is used when present.")
+    p.add_argument("--output-prefix", default="tma_xenium_core_optimization")
+    p.add_argument("--results-dir", default="results")
+    p.add_argument("--tables-dir", default=None)
+    p.add_argument("--figures-dir", default=None)
     p.add_argument("--n-patients", type=int, default=80)
-    p.add_argument("--number-of-tmas", type=int, default=1, help="Number of replicate TMAs/Xenium sample areas to distribute the patients across.")
+    p.add_argument("--number-of-tmas", type=int, default=2, help="Number of TMAs/Xenium sample areas. Default is 2 for 40 patients per TMA with 80 total patients.")
+    p.add_argument("--patients-per-tma", type=float, default=None, help="Target patients assigned to each TMA. Defaults to n_patients / number_of_tmas.")
     p.add_argument("--tma-counts-to-plot", default="1,2,3,4", help="Comma-separated number_of_tmas values to compare in the scan plot.")
     p.add_argument("--min-cores-per-patient", type=int, default=1, help="Minimum cores per patient across all TMAs.")
     p.add_argument("--min-edge-space-mm", type=float, default=1.0)
@@ -627,6 +953,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-core-diameter-mm", type=float, default=2.0)
     p.add_argument("--diameter-step-mm", type=float, default=0.01)
     p.add_argument("--allowed-core-diameters-mm", default="0.6,1.0,1.5,2.0")
+    p.add_argument("--orientation-empty-counts", default="0,1,2,3,4,5,6", help="Empty orientation-hole counts to scan in the area-efficiency comparison.")
+    p.add_argument("--orientation-fiducial-counts", default="0,1,2,3,4", help="Fiducial/control-core counts to scan in the area-efficiency comparison.")
+    p.add_argument("--min-orientation-markers", type=int, default=4, help="Minimum visible empty+fiducial markers required for the compact corner orientation comparison.")
+    p.add_argument("--min-orientation-asymmetry-score", type=int, default=1, help="Minimum asymmetry score required for the compact corner orientation comparison.")
     p.add_argument("--strategies", default="all")
     p.add_argument("--layouts", default="rectangular,hexagonal")
     p.add_argument("--seed", type=int, default=20260630)
@@ -636,8 +966,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    os.makedirs(os.path.dirname(args.output_prefix) or ".", exist_ok=True)
-    r_design = read_r_design(args.r_design, args.fallback_r_core_diameter_mm)
+    tables_dir = args.tables_dir or os.path.join(args.results_dir, "tables")
+    figures_dir = args.figures_dir or os.path.join(args.results_dir, "figures")
+    os.makedirs(tables_dir, exist_ok=True)
+    os.makedirs(figures_dir, exist_ok=True)
+    os.makedirs(args.results_dir, exist_ok=True)
+    r_design = resolve_r_design(args.r_design, args.fallback_r_core_diameter_mm)
     strategies = parse_strategy_list(args.strategies)
     layouts = [x.strip() for x in args.layouts.split(",") if x.strip()]
     diameters = sorted(set(list(frange(args.min_core_diameter_mm, args.max_core_diameter_mm, args.diameter_step_mm)) + parse_float_list(args.allowed_core_diameters_mm)))
@@ -649,23 +983,28 @@ def main() -> None:
         raise RuntimeError("No feasible design found. Try increasing --number-of-tmas, lowering --min-cores-per-patient, or reducing spacing/margins.")
     recommended = choose_recommended(best)
     rec_pos, rec_roles = recreate(recommended, r_design, args.margin_mm)
-    patient_lookup = assign_patients_across_tmas(rec_roles, args.number_of_tmas, args.n_patients, args.seed)
+    patients_per_tma = patients_per_tma_target(args.n_patients, args.number_of_tmas, args.patients_per_tma)
+    patient_lookup = assign_patients_by_tma_groups(rec_roles, args.number_of_tmas, args.n_patients, patients_per_tma, args.seed)
 
     outputs = {
-        "comparison": f"{args.output_prefix}_comparison.csv",
-        "best": f"{args.output_prefix}_best_allowed.csv",
-        "surface": f"{args.output_prefix}_surface_vs_diameter.png",
-        "cores": f"{args.output_prefix}_cores_per_patient_vs_diameter.png",
-        "allowed": f"{args.output_prefix}_allowed_sizes.png",
-        "penalty": f"{args.output_prefix}_orientation_penalty.png",
-        "tma_count_csv": f"{args.output_prefix}_tma_count_scan.csv",
-        "tma_count_png": f"{args.output_prefix}_tma_count_scan.png",
-        "map_csv": f"{args.output_prefix}_recommended_map.csv",
-        "map_png": f"{args.output_prefix}_recommended_map.png",
-        "summary": f"{args.output_prefix}_summary.txt",
-        "zip": f"{args.output_prefix}_outputs.zip",
+        "comparison": output_path(args.output_prefix, "_comparison.csv", tables_dir),
+        "area_efficiency": output_path(args.output_prefix, "_area_efficiency.csv", tables_dir),
+        "best": output_path(args.output_prefix, "_best_allowed.csv", tables_dir),
+        "surface": output_path(args.output_prefix, "_surface_vs_diameter.png", figures_dir),
+        "cores": output_path(args.output_prefix, "_cores_per_patient_vs_diameter.png", figures_dir),
+        "allowed": output_path(args.output_prefix, "_allowed_sizes.png", figures_dir),
+        "penalty": output_path(args.output_prefix, "_orientation_penalty.png", figures_dir),
+        "tma_count_csv": output_path(args.output_prefix, "_tma_count_scan.csv", tables_dir),
+        "tma_count_png": output_path(args.output_prefix, "_tma_count_scan.png", figures_dir),
+        "map_csv": output_path(args.output_prefix, "_recommended_map.csv", tables_dir),
+        "map_png": output_path(args.output_prefix, "_recommended_map.png", figures_dir),
+        "summary": output_path(args.output_prefix, "_summary.txt", tables_dir),
+        "zip": output_path(args.output_prefix, "_outputs.zip", args.results_dir),
     }
+    for path in outputs.values():
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     write_csv(results, outputs["comparison"])
+    write_area_efficiency_comparison(args, layouts, outputs["area_efficiency"])
     write_csv(best, outputs["best"])
     plot_lines(results, "patient_tissue_area_mm2", "Total patient tissue surface area across all TMAs, mm^2", f"{args.number_of_tmas} Xenium TMA(s): tissue surface by core size", outputs["surface"], args.min_cores_per_patient)
     plot_lines(results, "mean_cores_per_patient", "Mean patient cores per patient across all TMAs", f"{args.number_of_tmas} Xenium TMA(s): replication trade-off", outputs["cores"], args.min_cores_per_patient)
@@ -684,6 +1023,8 @@ def main() -> None:
 
     print(f"Recommended: {recommended.number_of_tmas} TMA(s), {recommended.layout}, {STRATEGY_LABELS[recommended.strategy]}, d={recommended.core_diameter_mm:g} mm")
     print(f"Patient slots: {recommended.patient_positions_all_tmas}; mean cores/patient: {recommended.mean_cores_per_patient:.2f}")
+    print(f"Patients per TMA target: {patients_per_tma:.2f}")
+    print(f"Total core surface / total chamber area: {recommended.total_core_surface_fraction_of_chamber_area_all_tmas:.4f}")
     for key, path in outputs.items():
         print(f"Wrote {key}: {path}")
 
