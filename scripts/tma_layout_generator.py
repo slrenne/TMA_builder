@@ -616,7 +616,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--usable-width-mm", type=float, default=25.0)
     parser.add_argument("--usable-height-mm", type=float, default=20.0)
     parser.add_argument("--margin-mm", type=float, default=0.0)
-    parser.add_argument("--core-diameter-mm", type=float, default=0.5)
+    parser.add_argument("--core-diameter-mm", type=float, default=0.6)
     parser.add_argument("--min-edge-space-mm", type=float, default=1.0)
     parser.add_argument(
         "--layout",
